@@ -235,7 +235,9 @@ def run(a):
     W = World(c, c["steps"]); parts = methods.build(a.method, c, W, dev)
     model = LM(c, W.V, parts).to(dev); opts = optimizers(model, c["lr"], c["embed_lr"]); X = torch.as_tensor(W.look[W.rows])
     mac = dev == "mps"; tparts = methods.build(a.method, c, W, "cpu") if mac else parts; twin = LM(c, W.V, tparts) if mac else model  # batches of changing shape are very slow on the Mac GPU, so its evals run on the CPU
-    ctx = evals.Ctx(twin, W, c, "cpu" if mac else dev); prep = time.time() - t0; name = f"{a.tier}_{a.method}_lr{c['lr']:g}{a.tag}"; ck = os.path.join(RUNS, f"ckpt_{name}.pt"); os.makedirs(RUNS, exist_ok=True)
+    relation_logp = getattr(a, "relation_logp", False)
+    ctx = evals.Ctx(twin, W, c, "cpu" if mac else dev, relation_logp=relation_logp)
+    prep = time.time() - t0; name = f"{a.tier}_{a.method}_lr{c['lr']:g}{a.tag}"; ck = os.path.join(RUNS, f"ckpt_{name}.pt"); os.makedirs(RUNS, exist_ok=True)
     forget = int(W.split / c["batch"]); marks = sorted({0, c["steps"], forget} | {int(c["steps"] * (i + 1) / c["evals"]) for i in range(c["evals"])})
     S = dict(step=0, first=None, mid=None, curve=[], eval_s=0.0, train_s=0.0)
     if os.path.exists(ck):  # a long tier continues across calls
@@ -269,7 +271,7 @@ def run(a):
     if S["mid"] is not None:  # loss on facts that stopped appearing after the first third, since they stopped; positive means forgotten
         last["forget.after-third.delta"] = last["forget.early.nll"] - S["mid"]["forget.early.nll"]; d = last["forget.after-third.delta"]; moved["forget.after-third.delta"] = bool(abs(d.mean()) > 2 * d.std() / max(1, len(d)) ** 0.5)
     if a.final:  # the hidden rows, facts and benchmark halves, written apart from the normal results
-        hid = evals.run_all(evals.Ctx(twin, W, c, ctx.dev, final=True))
+        hid = evals.run_all(evals.Ctx(twin, W, c, ctx.dev, final=True, relation_logp=relation_logp))
         np.savez_compressed(os.path.join(RUNS, "final_" + name + ".npz"), **hid)
         with open(os.path.join(HERE, "final_results.jsonl"), "a") as f: f.write(json.dumps(dict(method=a.method, tier=a.tier, lr=c["lr"], scores={k: round(float(v.mean()), 4) for k, v in hid.items()})) + "\n")
     res = dict(method=a.method, tier=a.tier, lr=c["lr"], steps=c["steps"], train_s=round(train_s, 1), eval_s=round(S["eval_s"], 1), prep_s=round(prep, 1),
@@ -288,4 +290,5 @@ if __name__ == "__main__":
     p.add_argument("--method", default="plain"); p.add_argument("--tier", default="5s", choices=list(TIERS))
     p.add_argument("--lr", type=float, default=0); p.add_argument("--steps", type=int, default=0); p.add_argument("--tag", default="")
     p.add_argument("--dev", default=""); p.add_argument("--threads", type=int, default=1); p.add_argument("--max-seconds", type=float, default=0); p.add_argument("--final", action="store_true"); p.add_argument("--keep", action="store_true")
+    p.add_argument("--relation-logp", action="store_true", help="Save the answer log-probability under each relation prompt as well as the gap.")
     run(p.parse_args())

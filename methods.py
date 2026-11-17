@@ -468,6 +468,14 @@ def three(make, where=-1, tw=1, gw=1, gram=None, out=False, moe=0, every=False, 
     return build
 
 
+def fitgate_no_ngram(c, W, dev):
+    """Ablate the final n-gram table from FitGate before training."""
+    parts = METHODS["fitgate"](c, W, dev)
+    # Build all parts first to preserve the other tables' sizes and initial weights.
+    del parts["mems"][c["layers"]]
+    return parts
+
+
 def engmoe(c, W, dev):
     """Control: Engram with MoE, nothing of ours, with MoE's extra weights taken out of the table so the total stays at Engram's."""
     d = c["width"]; dh = d // 8; hid = int(8 * d / 3); extra = c["layers"] * d * (3 * (hid // 2) + 3 * 8 * (hid // 4) + 8 - 3 * hid)
@@ -539,6 +547,8 @@ METHODS = {
     "vemoe": lambda c, W, dev: dict(value={k: ValueTable(c, W, dev) for k in odd(c)}, moe=8),
     "momemoe": lambda c, W, dev: dict(value={k: MoME(c, W, dev) for k in odd(c)}, moe=8),
     "fitgate": three(Agree, gram=ZeroEngram, moe=8),
+    "fitgate_no_ngram": fitgate_no_ngram,
+    "fitgate_nonzero_ngram": three(Agree, gram=Engram, moe=8),
     "fitgated": three(lambda c, W, dev: Agree(c, W, dev, cos=False), gram=ZeroEngram, moe=8),
     "fitgate1": three(Agree, gram=ZeroEngram, moe=8, where=0),
     "fitgate8": three(lambda c, W, dev: Agree(c, W, dev, sharp=8), gram=ZeroEngram, moe=8),

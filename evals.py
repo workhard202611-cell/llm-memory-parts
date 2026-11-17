@@ -14,8 +14,9 @@ EOT = 50256; BENCH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "d
 
 
 class Ctx:
-    def __init__(s, model, W, c, dev, final=False):
+    def __init__(s, model, W, c, dev, final=False, relation_logp=False):
         s.model, s.W, s.c, s.dev, s.final = model, W, c, dev, final; s.sets = {}; s.val = W.hid if final else W.val
+        s.relation_logp = relation_logp
 
     def once(s, name, make):
         if name not in s.sets: s.sets[name] = make()
@@ -181,7 +182,16 @@ def changed(ctx):
             out.append((i["q"], pre(own, o["f"]["s"]), pre(wording, i["f"]["s"]), i["y"]))
         return out
     items = ctx.once("changed", make); lp = lambda k: [r[1][i[3]] for r, i in zip(ctx.probe([(i[k], [EOT]) for i in items]), items)]; base = np.array(lp(0))
-    return {"changed.other-name.gap": base - np.array(lp(1)), "changed.other-relation.gap": base - np.array(lp(2))}
+    other_name = np.array(lp(1))
+    other_relation = np.array(lp(2))
+    scores = {
+        "changed.other-name.gap": base - other_name,
+        "changed.other-relation.gap": base - other_relation,
+    }
+    if ctx.relation_logp:
+        scores["changed.own-relation.logp"] = base
+        scores["changed.other-relation.logp"] = other_relation
+    return scores
 
 
 def track(ctx):
